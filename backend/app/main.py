@@ -1,18 +1,19 @@
-from fastapi import FastAPI, BackgroundTasks
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional, Dict, Any, List
+from typing import Optional
 
 from app.stream_engine import WeatherStreamEngine
 from app.demo_runner import DemoRunner
 from app.evaluator import run_evaluation_benchmark
+
 
 app = FastAPI(
     title="SKYGUARD AI — Autonomous Weather Station Quality Intelligence API",
     version="1.0.0"
 )
 
-# Enable CORS for React Vite frontend
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -21,9 +22,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize Stream Engine & Demo Controller
+
 stream_engine = WeatherStreamEngine()
 demo_runner = DemoRunner(stream_engine)
+
 
 class InjectFaultRequest(BaseModel):
     fault_type: str
@@ -31,19 +33,24 @@ class InjectFaultRequest(BaseModel):
     severity: Optional[float] = 1.0
     duration: Optional[int] = 30
 
+
 @app.get("/api/health")
 def get_health():
+    latest = stream_engine.get_latest_telemetry()
+
     return {
         "status": "ONLINE",
         "system": "SKYGUARD AI",
-        "station_id": stream_engine.get_latest_telemetry().get("station_id"),
-        "station_name": stream_engine.get_latest_telemetry().get("station_name"),
+        "station_id": latest.get("station_id"),
+        "station_name": latest.get("station_name"),
         "total_records": stream_engine.total_records
     }
+
 
 @app.get("/api/station")
 def get_station_status():
     latest = stream_engine.get_latest_telemetry()
+
     return {
         "station_id": latest.get("station_id"),
         "station_name": latest.get("station_name"),
@@ -63,16 +70,16 @@ def get_station_status():
         "active_fault": stream_engine.injector.active_fault
     }
 
+
 @app.get("/api/timeseries")
 def get_timeseries():
-    """
-    Returns rolling telemetry history for charts.
-    """
     return stream_engine.get_history()
+
 
 @app.get("/api/anomalies")
 def get_anomalies():
     latest = stream_engine.get_latest_telemetry()
+
     return {
         "is_anomaly": latest.get("is_anomaly"),
         "anomaly_score": latest.get("anomaly_score"),
@@ -87,47 +94,74 @@ def get_anomalies():
         "corrected_temperature": latest.get("corrected_temperature")
     }
 
+
 @app.get("/api/metrics")
 def get_evaluation_metrics():
-    """
-    Returns actual calculated Precision, Recall, F1, FPR benchmark metrics.
-    """
     return run_evaluation_benchmark(n_samples=150)
+
 
 @app.post("/api/inject-fault")
 def inject_fault(req: InjectFaultRequest):
+    """
+    Execute the entire fault scenario during one request.
+
+    This is important for Vercel/serverless deployment because the
+    frontend cannot depend on a later request continuing the same
+    in-memory fault state.
+    """
+
+    duration = max(1, min(req.duration or 30, 60))
+
     stream_engine.inject_fault(
         fault_type=req.fault_type,
         sensor=req.affected_sensor or "temperature",
         severity=req.severity or 1.0,
-        duration=req.duration or 30
+        duration=duration
     )
-    # Immediately tick stream to reflect fault
-    latest = stream_engine.tick()
+
+    sequence = [
+        stream_engine.tick()
+        for _ in range(duration)
+    ]
+
+    latest = sequence[-1]
+
     return {
         "message": f"Injected {req.fault_type} on {req.affected_sensor}",
-        "latest_telemetry": latest
+        "latest_telemetry": latest,
+        "telemetry_sequence": sequence,
+        "scenario_complete": True
     }
+
 
 @app.post("/api/reset")
 def reset_station():
     stream_engine.reset_station()
+
     latest = stream_engine.tick()
+
     return {
         "message": "Station reset to nominal operational baseline.",
         "latest_telemetry": latest
     }
 
+
 @app.post("/api/demo")
 def run_demo():
-    result = demo_runner.start_demo_sequence()
-    return result
+    return demo_runner.start_demo_sequence()
+
 
 @app.post("/api/tick")
 def advance_tick():
-    latest = stream_engine.tick()
-    return latest
+    return stream_engine.tick()
+
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
+
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True
+    )
