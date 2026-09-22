@@ -96,17 +96,33 @@ def get_evaluation_metrics():
 
 @app.post("/api/inject-fault")
 def inject_fault(req: InjectFaultRequest):
+    """
+    Run the requested scenario inside one serverless invocation.
+
+    Vercel functions are stateless between requests, so the frontend must not
+    depend on later /tick requests to continue a fault.
+    """
+    duration = max(1, min(req.duration or 30, 60))
+
     stream_engine.inject_fault(
         fault_type=req.fault_type,
         sensor=req.affected_sensor or "temperature",
         severity=req.severity or 1.0,
-        duration=req.duration or 30
+        duration=duration
     )
-    # Immediately tick stream to reflect fault
-    latest = stream_engine.tick()
+
+    sequence = [
+        stream_engine.tick()
+        for _ in range(duration)
+    ]
+
+    latest = sequence[-1]
+
     return {
         "message": f"Injected {req.fault_type} on {req.affected_sensor}",
-        "latest_telemetry": latest
+        "latest_telemetry": latest,
+        "telemetry_sequence": sequence,
+        "scenario_complete": True
     }
 
 @app.post("/api/reset")
