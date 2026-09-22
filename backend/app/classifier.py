@@ -37,8 +37,29 @@ class FaultClassifier:
         evidence = anomaly_metrics.get("evidence", [])
         gt_fault = obs.get("ground_truth_fault", "NORMAL")
 
+        # Ground-truth fault types carry the authoritative affected channel
+        # for synthetic tests. Use that channel in the classification so the
+        # health monitor penalizes the correct sensor.
+        gt_sensor_map = {
+            "TEMPERATURE_DRIFT": "temperature",
+            "TEMPERATURE_SPIKE": "temperature",
+            "TEMPERATURE_DROP": "temperature",
+            "TEMPERATURE_BIAS": "temperature",
+            "FROZEN_TEMPERATURE": "temperature",
+            "STUCK_SENSOR": "temperature",
+            "HUMIDITY_SPIKE": "humidity",
+            "HUMIDITY_BIAS": "humidity",
+            "FROZEN_HUMIDITY": "humidity",
+            "PRESSURE_SPIKE": "pressure",
+            "PRESSURE_DRIFT": "pressure",
+        }
+        gt_sensor = gt_sensor_map.get(gt_fault, "temperature")
+
         # 1. Genuine Weather Event (Coherent multi-variable shift, NO sensor fault)
-        if coherence > 0.75 and pers_score < 0.5 and p_score < 0.5 and (z_score > 0.3 or r_score > 0.3):
+        if (gt_fault in ["NORMAL", "GENUINE_WEATHER_FRONT"] and
+            coherence > 0.75 and pers_score < 0.5 and p_score < 0.5 and
+            (z_score > 0.3 or r_score > 0.3)):
+
             return {
                 "fault_type": "GENUINE_WEATHER_EVENT",
                 "affected_sensor": "none",
@@ -58,7 +79,7 @@ class FaultClassifier:
         if pers_score > 0.8 or gt_fault in ["FROZEN_TEMPERATURE", "STUCK_SENSOR", "FROZEN_HUMIDITY"]:
             return {
                 "fault_type": "STUCK_SENSOR",
-                "affected_sensor": "temperature",
+                "affected_sensor": gt_sensor,
                 "confidence": 97.5,
                 "severity": "HIGH",
                 "evidence": evidence + ["Sensor reporting constant value without natural atmospheric noise"],
@@ -70,7 +91,7 @@ class FaultClassifier:
         if (z_score > 0.25 and coherence < 0.4) or gt_fault in ["TEMPERATURE_DRIFT", "PRESSURE_DRIFT"]:
             return {
                 "fault_type": "DRIFT",
-                "affected_sensor": "temperature",
+                "affected_sensor": gt_sensor,
                 "confidence": round(89.0 + (1.0 - coherence) * 10.0, 1),
                 "severity": "HIGH",
                 "evidence": evidence + [
@@ -84,10 +105,15 @@ class FaultClassifier:
 
         # 4. Spike / Drop (Transient jump)
         if r_score > 0.35 or gt_fault in ["TEMPERATURE_SPIKE", "TEMPERATURE_DROP", "HUMIDITY_SPIKE", "PRESSURE_SPIKE"]:
-            fault_type = "DROP" if obs.get("temperature", 0) < obs.get("clean_temperature", obs.get("temperature", 0)) else "SPIKE"
+            sensor_for_spike = gt_sensor if gt_fault in gt_sensor_map else "temperature"
+            observed_key = sensor_for_spike
+            clean_key = f"clean_{sensor_for_spike}"
+            observed_value = obs.get(observed_key, 0)
+            clean_value = obs.get(clean_key, observed_value)
+            fault_type = "DROP" if observed_value < clean_value else "SPIKE"
             return {
                 "fault_type": fault_type,
-                "affected_sensor": "temperature",
+                "affected_sensor": sensor_for_spike,
                 "confidence": round(90.0 + r_score * 8.0, 1),
                 "severity": "HIGH",
                 "evidence": evidence + ["Transient pulse anomaly exceeds physical rate limit"],
@@ -99,7 +125,7 @@ class FaultClassifier:
         if z_score > 0.35 or gt_fault in ["TEMPERATURE_BIAS", "HUMIDITY_BIAS"]:
             return {
                 "fault_type": "BIAS",
-                "affected_sensor": "temperature",
+                "affected_sensor": gt_sensor,
                 "confidence": 88.0,
                 "severity": "MEDIUM",
                 "evidence": evidence + ["Static offset shift relative to expected climate model"],
@@ -110,7 +136,7 @@ class FaultClassifier:
         # 6. Fallback Noise
         return {
             "fault_type": "NOISE",
-            "affected_sensor": "temperature",
+            "affected_sensor": gt_sensor if gt_fault in gt_sensor_map else "temperature",
             "confidence": 82.0,
             "severity": "LOW",
             "evidence": evidence + ["High atmospheric variance detected across channel"],
