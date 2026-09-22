@@ -4,7 +4,11 @@ export interface StationHealth {
   humidity_health: number;
   pressure_health: number;
   data_quality: number;
-  maintenance_status: 'OPTIMAL' | 'MONITOR' | 'MAINTENANCE_REQUIRED' | 'CRITICAL';
+  maintenance_status:
+    | 'OPTIMAL'
+    | 'MONITOR'
+    | 'MAINTENANCE_REQUIRED'
+    | 'CRITICAL';
   active_alerts_count: number;
   drift_risk: string;
 }
@@ -37,6 +41,7 @@ export interface TelemetryPoint {
   reconstruction_confidence: number;
 
   ground_truth_fault: string;
+  ground_truth_sensor?: string;
   clean_temperature: number;
 
   station_health: StationHealth;
