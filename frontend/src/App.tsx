@@ -66,6 +66,11 @@ export function App() {
 
   // Inject Fault
   const handleInjectFault = async (faultType: string, sensor: string, severity: number, duration: number) => {
+    // Pause the live tick loop while the serverless API executes the complete
+    // scenario. This prevents the next /tick request from immediately
+    // replacing the injected result with a fresh baseline request.
+    setIsPlaying(false);
+
     try {
       const res = await fetch(`${API_BASE}/inject-fault`, {
         method: 'POST',
@@ -77,12 +82,20 @@ export function App() {
           duration
         })
       });
-      if (res.ok) {
-        const result = await res.json();
-        if (result.latest_telemetry) {
-          setLatestTelemetry(result.latest_telemetry);
-          setHistory((prev) => [...prev.slice(-99), result.latest_telemetry]);
-        }
+
+      if (!res.ok) {
+        console.error('Fault injection failed:', res.status, await res.text());
+        return;
+      }
+
+      const result = await res.json();
+      const scenario = Array.isArray(result.telemetry_history)
+        ? result.telemetry_history
+        : (result.latest_telemetry ? [result.latest_telemetry] : []);
+
+      if (scenario.length > 0) {
+        setHistory((prev) => [...prev, ...scenario].slice(-100));
+        setLatestTelemetry(scenario[scenario.length - 1]);
       }
     } catch (err) {
       console.error('Failed to inject fault:', err);
@@ -91,6 +104,7 @@ export function App() {
 
   // Reset Station
   const handleReset = async () => {
+    setIsPlaying(false);
     try {
       const res = await fetch(`${API_BASE}/reset`, { method: 'POST' });
       if (res.ok) {
