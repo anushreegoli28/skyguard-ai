@@ -96,8 +96,19 @@ class WeatherStreamEngine:
             "reconstruction_confidence": reconstruction["reconstruction_confidence"],
 
             # Ground Truth
-            "ground_truth_fault": modified_obs.get("ground_truth_fault", "NORMAL"),
-            "clean_temperature": modified_obs.get("clean_temperature"),
+            "ground_truth_fault": modified_obs.get(
+    "ground_truth_fault",
+    "NORMAL"
+),
+
+"ground_truth_sensor": modified_obs.get(
+    "ground_truth_sensor",
+    "none"
+),
+
+"clean_temperature": modified_obs.get(
+    "clean_temperature"
+),
 
             # Health HUD
             "station_health": health_metrics
