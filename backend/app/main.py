@@ -96,17 +96,60 @@ def get_evaluation_metrics():
 
 @app.post("/api/inject-fault")
 def inject_fault(req: InjectFaultRequest):
+    """
+    Serverless-safe fault injection.
+
+    Vercel may create a fresh Python worker for each request, so the complete
+    requested scenario is executed inside this single request instead of
+    relying on in-memory state across multiple /tick calls.
+    """
+    fault_sensor_map = {
+        "TEMPERATURE_DRIFT": "temperature",
+        "TEMPERATURE_SPIKE": "temperature",
+        "TEMPERATURE_DROP": "temperature",
+        "TEMPERATURE_BIAS": "temperature",
+        "FROZEN_TEMPERATURE": "temperature",
+        "STUCK_SENSOR": "temperature",
+        "HUMIDITY_SPIKE": "humidity",
+        "HUMIDITY_BIAS": "humidity",
+        "FROZEN_HUMIDITY": "humidity",
+        "PRESSURE_SPIKE": "pressure",
+        "PRESSURE_DRIFT": "pressure",
+        "RANDOM_NOISE": "all",
+        "MISSING_DATA": "all",
+        "GENUINE_WEATHER_FRONT": "all",
+    }
+
+    fault_type = req.fault_type.upper()
+    requested_sensor = (req.affected_sensor or "temperature").lower()
+    sensor = fault_sensor_map.get(fault_type, requested_sensor)
+
+    if requested_sensor == "all":
+        sensor = "all"
+
+    # Keep the scenario compact enough for a serverless request while still
+    # producing a visible health/history response.
+    ticks_to_run = max(1, min(int(req.duration or 1), 40))
+
+    stream_engine.reset_station()
     stream_engine.inject_fault(
-        fault_type=req.fault_type,
-        sensor=req.affected_sensor or "temperature",
+        fault_type=fault_type,
+        sensor=sensor,
         severity=req.severity or 1.0,
-        duration=req.duration or 30
+        duration=ticks_to_run
     )
-    # Immediately tick stream to reflect fault
-    latest = stream_engine.tick()
+
+    scenario_history = []
+    for _ in range(ticks_to_run):
+        scenario_history.append(stream_engine.tick())
+
+    latest = scenario_history[-1]
+
     return {
-        "message": f"Injected {req.fault_type} on {req.affected_sensor}",
-        "latest_telemetry": latest
+        "message": f"Injected {fault_type} on {sensor} for {ticks_to_run} ticks",
+        "latest_telemetry": latest,
+        "telemetry_history": scenario_history,
+        "scenario_ticks": ticks_to_run
     }
 
 @app.post("/api/reset")
