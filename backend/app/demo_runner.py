@@ -2,21 +2,36 @@ from typing import Dict, Any, List
 
 
 class DemoRunner:
+    """
+    Coordinates the deterministic interactive demo sequence.
+    """
 
     def __init__(self, stream_engine):
+
         self.stream_engine = stream_engine
+
         self.is_demo_active = False
+
         self.current_step = 0
 
         self.step_descriptions = [
+
             "Initializing Healthy Weather Station Baseline...",
+
             "Monitoring Normal Atmospheric Variation...",
+
             "INJECTING: Temperature Sensor Thermal Drift Fault (+0.35°C/tick)...",
+
             "ANOMALY ENGINE DETECTS DEVIATION: Anomaly Score spikes > 0.85...",
+
             "AI CLASSIFIER DIAGNOSIS: Temperature Sensor Drift (Confidence 96%)...",
+
             "SELF-HEALING RECONSTRUCTION: Calculated Corrected Value = Expected Baseline...",
+
             "STATION AUTOMATED RESET & SANITIZATION...",
+
             "METEOROLOGICAL EVENT: Approaching Synoptic Warm Front (Coherent Temp/RH/Press Shift)...",
+
             "AI VERIFICATION COMPLETE: Identifies Genuine Weather Front (NO SENSOR FAULT DETECTED)."
         ]
 
@@ -30,7 +45,10 @@ class DemoRunner:
             Dict[str, Any]
         ] = []
 
-        # Healthy baseline
+        # ---------------------------------------------------------
+        # 1. CLEAN BASELINE
+        # ---------------------------------------------------------
+
         self.stream_engine.reset_station()
 
         for _ in range(5):
@@ -38,7 +56,10 @@ class DemoRunner:
                 self.stream_engine.tick()
             )
 
-        # Temperature drift
+        # ---------------------------------------------------------
+        # 2. TEMPERATURE DRIFT
+        # ---------------------------------------------------------
+
         self.stream_engine.inject_fault(
             "TEMPERATURE_DRIFT",
             sensor="temperature",
@@ -55,7 +76,10 @@ class DemoRunner:
             self.stream_engine.get_latest_telemetry()
         )
 
-        # Reset
+        # ---------------------------------------------------------
+        # 3. RESET
+        # ---------------------------------------------------------
+
         self.stream_engine.reset_station()
 
         for _ in range(5):
@@ -63,7 +87,10 @@ class DemoRunner:
                 self.stream_engine.tick()
             )
 
-        # Genuine weather front
+        # ---------------------------------------------------------
+        # 4. GENUINE WEATHER FRONT
+        # ---------------------------------------------------------
+
         self.stream_engine.inject_fault(
             "GENUINE_WEATHER_FRONT",
             sensor="all",
@@ -80,7 +107,10 @@ class DemoRunner:
             self.stream_engine.get_latest_telemetry()
         )
 
-        # Final clean point
+        # ---------------------------------------------------------
+        # 5. FINAL CLEAN BASELINE
+        # ---------------------------------------------------------
+
         self.stream_engine.reset_station()
 
         results.append(
@@ -90,6 +120,7 @@ class DemoRunner:
         self.is_demo_active = False
 
         return {
+
             "demo_status":
                 "COMPLETED_SUCCESSFULLY",
 
@@ -103,6 +134,7 @@ class DemoRunner:
                 results,
 
             "drift_detection_result": {
+
                 "fault_type":
                     drift_telemetry.get(
                         "fault_type"
@@ -130,6 +162,7 @@ class DemoRunner:
             },
 
             "genuine_weather_result": {
+
                 "fault_type":
                     weather_telemetry.get(
                         "fault_type"
